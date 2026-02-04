@@ -100,6 +100,16 @@ class AnthropicAdapter implements AIClientInterface {
   public function completions(string $model, string $prompt, $temperature, $max_tokens = 512, bool $stream_response = FALSE) {
     $start_time = microtime(TRUE);
     try {
+      // Allow other modules to alter the prompt before sending (e.g., inject site context).
+      if (function_exists('backdrop_alter')) {
+        $context = [
+          'operation' => 'completion',
+          'model' => $model,
+          'provider' => 'anthropic',
+        ];
+        backdrop_alter('openai_prompt', $prompt, $context);
+      }
+
       $params = [
         'model' => $model,
         'max_tokens' => (int) $max_tokens ?: 512,
@@ -164,6 +174,16 @@ class AnthropicAdapter implements AIClientInterface {
   public function chat(string $model, array $messages, $temperature, $max_tokens = 1024, bool $stream_response = FALSE) {
     $start_time = microtime(TRUE);
     try {
+      // Allow other modules to alter chat messages before sending (e.g., inject site context).
+      if (function_exists('backdrop_alter')) {
+        $context = [
+          'operation' => 'chat',
+          'model' => $model,
+          'provider' => 'anthropic',
+        ];
+        backdrop_alter('openai_chat_messages', $messages, $context);
+      }
+
       // Convert messages to Anthropic format
       $anthropic_messages = $this->_convertMessages($messages);
 
@@ -266,16 +286,14 @@ class AnthropicAdapter implements AIClientInterface {
    * callers receive a predictable shape and administrators can diagnose.
    */
   public function embedding(string $input, string $model, bool $log = TRUE): array {
-    // Record a log in openai_log if possible to show that it was attempted,
-    // but only when $log is TRUE (probing calls with $log = FALSE should
-    // not create openai_log entries).
-    if ($log && isset($this->api) && method_exists($this->api, 'recordLog')) {
-      $this->api->recordLog('embedding', $model, ['input' => $input], NULL, FALSE, 0, 'Anthropic does not support embeddings.', FALSE);
+    // Record a log in openai_log if possible to show that it was attempted
+    if (isset($this->api) && method_exists($this->api, 'recordLog')) {
+      $this->api->recordLog('embedding', $model, ['input' => $input], NULL, FALSE, 0, 'Anthropic does not support embeddings.', !$log);
     }
     if ($log) {
       // Only log to watchdog if it's not a probing call ($log is usually FALSE during probes)
       // and only if explicitly requested.
-      watchdog('openai_anthropic', 'Embedding requested but Anthropic does not support embeddings. Returning empty array.', [], WATCHDOG_WARNING);
+      watchdog('openai_anthropic', 'Embedding requested but Anthropic does not support embeddings. Returning empty array.', [], WATCHDOG_DEBUG);
     }
     return [];
   }
